@@ -87,7 +87,7 @@ stages:
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'sh-service-connection'
+              azureSubscription: 'sh2-service-connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
@@ -103,7 +103,7 @@ stages:
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'sh-service-connection'
+              azureSubscription: 'sh2-service-connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
@@ -150,7 +150,7 @@ stages:
               steps:
                 - task: AzureCLI@2
                   inputs:
-                    azureSubscription: 'sh-service-connection'
+                    azureSubscription: 'sh2-service-connection'
                     scriptType: 'bash'
                     scriptLocation: 'inlineScript'
                     inlineScript: |
