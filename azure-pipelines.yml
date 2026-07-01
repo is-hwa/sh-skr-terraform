@@ -13,7 +13,7 @@ parameters:
     type: string
 
 pool:
-  name: 'skr-azure-pipeline'
+  name: 'sh-skr-test'
 
 variables:
   - group: terraform-dns-record
@@ -87,7 +87,7 @@ stages:
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'SKR-Service-Connection'
+              azureSubscription: 'sh-service-connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
@@ -103,7 +103,7 @@ stages:
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'SKR-Service-Connection'
+              azureSubscription: 'sh-service-connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
@@ -150,7 +150,7 @@ stages:
               steps:
                 - task: AzureCLI@2
                   inputs:
-                    azureSubscription: 'SKR-Service-Connection'
+                    azureSubscription: 'sh-service-connection'
                     scriptType: 'bash'
                     scriptLocation: 'inlineScript'
                     inlineScript: |
