@@ -45,7 +45,7 @@ stages:
               mv $(Build.SourcesDirectory)/* $(WORK_DIR)
               
               # 기존 State 파일 확인
-              STATE_FILE="$(WORK_DIR)/$(VAR_FILE)"
+              STATE_FILE="$(STATE_DIR)/$(VAR_FILE)"
               if [ -f "$STATE_FILE" ]; then
                 cp "$STATE_FILE" $(WORK_DIR)/merged.json
               else
@@ -54,9 +54,6 @@ stages:
               
               # Variable 병합을 위한 키 추출
               jq -c '.private_dns_records[] | "\(.resource_group_name)__\(.dns_zone_name)__\(.name)"' terraform.tfvars.json > record-keys.txt
-              
-              # Variable 병합을 위한 기존 파일 복사
-              cp $(VAR_FILE) merged.json
               
               # Variable 병합
               while read -r target_key; do
