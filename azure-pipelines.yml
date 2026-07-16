@@ -13,16 +13,16 @@ parameters:
     type: string
 
 pool:
-  name: 'sh-skr-test'
+  name: 'skr-azure-pipeline'
 
 variables:
-  - group: terraform-dns-record
+  - group: terraform-stg-acc
   - name: WORK_DIR
     value: '$(BASE_DIR)/runs/${{ parameters.REQUEST_ID }}'
   - name: STATE_DIR
     value: '$(BASE_DIR)/state/${{ parameters.ENV }}/${{ parameters.PROJECT }}/$(STACK)'
   - name: VAR_FILE
-    value: 'records.auto.tfvars.json'
+    value: 'stg-acc.auto.tfvars.json'
 
 stages:
   - stage: Prepare
@@ -33,6 +33,7 @@ stages:
 
           - script: |
               set -e
+              
               # 파일 경로 설정
               mkdir -p $(WORK_DIR) $(STATE_DIR)
               cd $(WORK_DIR)
@@ -50,35 +51,35 @@ stages:
               if [ -f "$STATE_FILE" ]; then
                 cp "$STATE_FILE" $(WORK_DIR)/merged.json
               else
-                echo '{"private_dns_records":{}}' > $(WORK_DIR)/merged.json
+                echo '{"storage_account":{}}' > $(WORK_DIR)/merged.json
               fi
               
               # Variable 병합을 위한 키 추출
-              jq -c '.private_dns_records[] | "\(.resource_group_name)__\(.dns_zone_name)__\(.name)"' terraform.tfvars.json > record-keys.txt
+              jq -c '.storage_account[] | .storage_account_config.name' terraform.tfvars.json > stg-acc-keys.txt
               
               # Variable 병합
               while read -r target_key; do
                   target_key=$(echo "$target_key" | jq -r .)
                   if [ "${{ parameters.ACTION }}" = "delete" ]; then
                       jq --arg k "$target_key" \
-                          '.private_dns_records |= with_entries(select(("\(.value.resource_group_name)__\(.value.dns_zone_name)__\(.value.name)") != $k))' \
+                          '.storage_account |= with_entries(select(.value.storage_account_config.name  != $k))' \
                           merged.json > tmp.json && mv tmp.json merged.json
                   else
                       spec=$(jq -c --arg k "$target_key" \
-                        '.private_dns_records[] | select("\(.resource_group_name)__\(.dns_zone_name)__\(.name)" == $k)' \
+                        '.storage_account[] | select(.storage_account_config.name == $k)' \
                           terraform.tfvars.json)
                       jq --arg k "$target_key" --argjson spec "$spec" \
-                          '.private_dns_records |= (with_entries(select(("\(.value.resource_group_name)__\(.value.dns_zone_name)__\(.value.name)") != $k)) + {($k): $spec})' \
+                          '.storage_account |= (with_entries(select(.value.storage_account_config.name  != $k)) + {($k): $spec})' \
                           merged.json > tmp.json && mv tmp.json merged.json
                   fi
-              done < record-keys.txt
+              done < stg-acc-keys.txt
 
               mv merged.json $(VAR_FILE)
               
               cat > backend.hcl <<EOF
               path = "$(STATE_DIR)/terraform.tfstate"
               EOF
-              } 2>error.log
+              } 2> >(tee error.log >&2)
             displayName: 'Prepare TFVars'
 
   - stage: Init
@@ -89,14 +90,14 @@ stages:
           - checkout: none
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'sh2-service-connection'
+              azureSubscription: 'SKR-Service-Connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
                 set -e
                 cd $(WORK_DIR)
                 # 💡 에러가 나면 자동으로 여기서 파이프라인이 멈추고 error.log가 보존됩니다.
-                terraform init -backend-config="backend.hcl" 2>error.log
+                terraform init -backend-config="backend.hcl" 2> >(tee error.log >&2)
             displayName: 'Terraform Init'
 
   - stage: Plan
@@ -107,13 +108,13 @@ stages:
           - checkout: none
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'sh2-service-connection'
+              azureSubscription: 'SKR-Service-Connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
                 set -e
                 cd $(WORK_DIR)
-                terraform plan -var-file=$(VAR_FILE) -out=tfplan 2>error.log
+                terraform plan -var-file=$(VAR_FILE) -out=tfplan 2> >(tee error.log >&2)
                 terraform show -json tfplan > tfplan.json
             displayName: 'Terraform Plan'
 
@@ -144,13 +145,13 @@ stages:
                   "planResult": "${PLAN_JSON}"
                 }
                 EOF
-                } 2>$(WORK_DIR)/error.log
+                } 2> >(tee "$(WORK_DIR)/error.log" >&2)
 
   - stage: Apply
     dependsOn: Plan
     jobs:
       - deployment: ApplyJob
-        environment: terraform-apply-approval
+        environment: shen
         strategy:
           runOnce:
             deploy:
@@ -158,13 +159,13 @@ stages:
                 - checkout: none
                 - task: AzureCLI@2
                   inputs:
-                    azureSubscription: 'sh2-service-connection'
+                    azureSubscription: 'SKR-Service-Connection'
                     scriptType: 'bash'
                     scriptLocation: 'inlineScript'
                     inlineScript: |
                       set -e
                       cd $(WORK_DIR)
-                      terraform apply -auto-approve tfplan 2>error.log
+                      terraform apply -auto-approve tfplan 2> >(tee error.log >&2)
                       cp $(VAR_FILE) $(STATE_DIR)/$(VAR_FILE)
                   displayName: 'Terraform Apply'
 
@@ -208,17 +209,16 @@ stages:
                 ERROR_MSG="상세 에러 로그 파일이 없습니다. Azure DevOps 콘솔을 확인하세요."
                 
                 if [ -f "$LOG_FILE" ]; then
-                  ERROR_MSG=$(cat "$LOG_FILE" | sed 's/"/\\"/g' | tr '\n' ' ')
+                  ERROR_MSG=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG_FILE")
                 fi
                 
-                curl -X POST "http://13.124.121.66:8000/api/pipeline/failed" \
-                  -H "Content-Type: application/json" \
-                  -d @- <<EOF
-                {
-                  "pipelineId": "$(Build.BuildId)",
-                  "status": "failed",
-                  "failedStage": "$(System.StageName)",
-                  "requestId": "${{ parameters.REQUEST_ID }}",
-                  "errorMessage": "${ERROR_MSG}"
-                }
-                EOF
+                jq -n \
+                  --arg pipelineId "$(Build.BuildId)" \
+                  --arg status "failed" \
+                  --arg failedStage "$(System.StageName)" \
+                  --arg requestId "${{ parameters.REQUEST_ID }}" \
+                  --arg errorMessage "$ERROR_MSG" \
+                  '{pipelineId: $pipelineId, status: $status, failedStage: $failedStage, requestId: $requestId, errorMessage: $errorMessage}' \
+                | curl --fail -X POST "http://13.124.121.66:8000/api/pipeline/failed" \
+                -H "Content-Type: application/json" \
+                -d @-
