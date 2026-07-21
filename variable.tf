@@ -1,8 +1,15 @@
 # provider 구독 설정을 위한 variable 선언
-# variable "subscription_id" {
-#   type        = string
-#   description = "배포 대상 구독 ID"
-# }
+# Management Group scope service connection에서는 provider가 구독을 자동으로
+# 알 수 없으므로, 실행 시 반드시 대상 구독 ID를 명시해야 함
+variable "subscription_id" {
+  type        = string
+  description = "배포 대상 구독 ID"
+
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.subscription_id))
+    error_message = "subscription_id는 GUID 형식이어야 합니다."
+  }
+}
 
 variable "storage_accounts" {
   type = map(object({
