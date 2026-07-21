@@ -15,7 +15,7 @@ parameters:
     type: string
 
 pool:
-  name: 'skr-azure-pipeline'
+  name: 'sh-skr-test'
 
 variables:
   - group: terraform-stg-acc
