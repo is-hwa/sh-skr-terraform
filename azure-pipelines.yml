@@ -54,25 +54,25 @@ stages:
               if [ -f "$STATE_FILE" ]; then
                 cp "$STATE_FILE" $(WORK_DIR)/merged.json
               else
-                echo '{"storage_account":{}}' > $(WORK_DIR)/merged.json
+                echo '{"storage_accounts":{}}' > $(WORK_DIR)/merged.json
               fi
 
               # Variable 병합을 위한 키 추출
-              jq -c '.storage_account[] | .storage_account_config.name' terraform.tfvars.json > stg-acc-keys.txt
+              jq -c '.storage_accounts[] | .storage_account_config.name' terraform.tfvars.json > stg-acc-keys.txt
 
               # Variable 병합
               while read -r target_key; do
                   target_key=$(echo "$target_key" | jq -r .)
                   if [ "${{ parameters.ACTION }}" = "delete" ]; then
                       jq --arg k "$target_key" \
-                          '.storage_account |= with_entries(select(.value.storage_account_config.name != $k))' \
+                          '.storage_accounts |= with_entries(select(.value.storage_account_config.name != $k))' \
                           merged.json > tmp.json && mv tmp.json merged.json
                   else
                       spec=$(jq -c --arg k "$target_key" \
-                        '.storage_account[] | select(.storage_account_config.name == $k)' \
+                        '.storage_accounts[] | select(.storage_account_config.name == $k)' \
                           terraform.tfvars.json)
                       jq --arg k "$target_key" --argjson spec "$spec" \
-                          '.storage_account |= (with_entries(select(.value.storage_account_config.name != $k)) + {($k): $spec})' \
+                          '.storage_accounts |= (with_entries(select(.value.storage_account_config.name != $k)) + {($k): $spec})' \
                           merged.json > tmp.json && mv tmp.json merged.json
                   fi
               done < stg-acc-keys.txt
